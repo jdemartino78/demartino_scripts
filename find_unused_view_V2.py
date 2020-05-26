@@ -3,6 +3,7 @@ import glob
 import re
 import argparse
 import pandas as pd
+import os
 
 
 def path_file_parser(path, extension="", recursive=True):
@@ -21,6 +22,7 @@ def all_explores(path):
     path (str): Parent Directory to parse
     """
     files = path_file_parser(path, extension='model.lkml')
+    files.extend(path_file_parser(path, extension='explore.lkml'))
     models = {}
     for file in files:
         filename = file[file.rfind('/') + 1:]
@@ -36,16 +38,20 @@ def all_explores(path):
                             base_table = explores['from']
                         else:
                             base_table = explores['name']
-                        models[filename][base_table] = [base_table]
+                        if 'label' in explores:
+                            key = explores['label']
+                        else:
+                            key = explores['name']
+                        models[filename][key] = [base_table]
                         # Check if the base table has joins
                         if 'joins' in explores:
                             for join in explores['joins']:
                                 if 'view_name' in join:
-                                    models[filename][base_table].append(join['view_name'])
+                                    models[filename][key].append(join['view_name'])
                                 elif 'from' in join:
-                                    models[filename][base_table].append(join['from'])
+                                    models[filename][key].append(join['from'])
                                 else:
-                                    models[filename][base_table].append(join['name'])
+                                    models[filename][key].append(join['name'])
                 except KeyError:
                     print(filename)
             except SyntaxError:
@@ -149,7 +155,8 @@ if __name__ == "__main__":
     parser.add_argument('--path', '-p', type=str, required=True, help='A path to be parsed')
     args = parser.parse_args()
     # path = '/Users/johndemartino/Downloads/looker-apalon-lookml-master'
-    main_path = args.path[args.path.rfind('/') + 1:]
+    # main_path = args.path[args.path.rfind('/') + 1:]
+    main_path = os.path.basename(args.path.split('/')[-2])
     models = all_explores(args.path)
     views = all_views(args.path)
     views_with_dependent = identify_dependent_view(views)
@@ -160,6 +167,6 @@ if __name__ == "__main__":
     unused_views = find_unused_views(unique_views, unique_explores)
     empty_model_files = find_empty_files(models)
     empty_view_files = find_empty_files(views)
-    
     output = pd.Series(unused_views)
-    output.to_csv(main_path + '_unused_views_2.csv', )
+    output = output.append(pd.Series(empty_view_files))
+    output.reset_index(drop=True).to_csv(main_path + '_unused_views_2.csv', )
