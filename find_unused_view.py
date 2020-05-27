@@ -32,21 +32,27 @@ def all_explores(path):
                 parsed = lkml.load(f)
                 try:
                     for explores in parsed['explores']:
+                        if 'label' in explores:
+                            key = explores['label']
+                        else:
+                            key = explores['name']
+                        
                         if 'view_name' in explores:
                             base_table = explores['view_name']
                         elif 'from' in explores:
                             base_table = explores['from']
                         else:
                             base_table = explores['name']
-                        if 'label' in explores:
-                            key = explores['label']
-                        else:
-                            key = explores['name']
                         models[filename][key] = [base_table]
+                        if 'view_name' in explores and 'from' in explores:
+                            models[filename][key].append(explores['from'])
                         # Check if the base table has joins
                         if 'joins' in explores:
                             for join in explores['joins']:
-                                if 'view_name' in join:
+                                if 'view_name' in join and 'from' in join:
+                                    models[filename][key].append(join['view_name'])
+                                    models[filename][key].append(join['from'])
+                                elif 'view_name' in join:
                                     models[filename][key].append(join['view_name'])
                                 elif 'from' in join:
                                     models[filename][key].append(join['from'])
