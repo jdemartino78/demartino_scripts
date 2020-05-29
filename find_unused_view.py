@@ -2,6 +2,7 @@ import lkml
 import glob
 import re
 import argparse
+from collections import defaultdict
 import pandas as pd
 import os
 
@@ -16,125 +17,76 @@ def path_file_parser(path, extension="", recursive=True):
     return [f for f in glob.glob(path + "**/*" + extension, recursive=recursive)]
 
 
-def all_explores(path):
-    """Return a dictionary of Explores and Joined in Views Objects
+def identify_all_explores(parsed_lookML_file):
+    """Return a dictionary of All explores and joined in views objects within a file
+    Parameters:
+    path (str): Parsed LookML objects
+    filename (str): filename for parsed object
+    """
+    # Check if the base table has joins
+    if 'explores' in parsed_lookML_file:
+        all_explores = defaultdict(list)
+        for explore in parsed_lookML_file['explores']:
+            if 'view_name' not in explore and 'from' not in explore:
+                all_explores[explore['name']].append(explore['name'])
+            if 'view_name' in explore:
+                all_explores[explore['name']].append(explore['view_name'])
+            if 'from' in explore:
+                all_explores[explore['name']].append(explore['from'])
+            # Check if the base table has joins
+            if 'joins' in explore:
+                for join in explore['joins']:
+                    all_explores[explore['name']].append(join['name'])
+                    if 'view_name' in join:
+                        all_explores[explore['name']].append(join['view_name'])
+                    if 'from' in join:
+                        all_explores[explore['name']].append(join['from'])
+        return all_explores
+
+
+def identify_all_views(parsed_lookML_file):
+    """Return a dictionary of all views and dependent view objects
     Parameters:
     path (str): Parent Directory to parse
+    filename (str): filename for parsed object
     """
-    files = path_file_parser(path, extension='model.lkml')
-    files.extend(path_file_parser(path, extension='explore.lkml'))
-    models = {}
-    for file in files:
-        filename = file[file.rfind('/') + 1:]
-        models[filename] = {}
-        with open(file, 'r') as f:
-            try:
-                parsed = lkml.load(f)
-                try:
-                    for explores in parsed['explores']:
-                        if 'label' in explores:
-                            key = explores['label']
-                        else:
-                            key = explores['name']
-                        
-                        if 'view_name' in explores:
-                            base_table = explores['view_name']
-                        elif 'from' in explores:
-                            base_table = explores['from']
-                        else:
-                            base_table = explores['name']
-                        models[filename][key] = [base_table]
-                        if 'view_name' in explores and 'from' in explores:
-                            models[filename][key].append(explores['from'])
-                        # Check if the base table has joins
-                        if 'joins' in explores:
-                            for join in explores['joins']:
-                                if 'view_name' in join and 'from' in join:
-                                    models[filename][key].append(join['view_name'])
-                                    models[filename][key].append(join['from'])
-                                elif 'view_name' in join:
-                                    models[filename][key].append(join['view_name'])
-                                elif 'from' in join:
-                                    models[filename][key].append(join['from'])
-                                else:
-                                    models[filename][key].append(join['name'])
-                except KeyError:
-                    print(filename)
-            except SyntaxError:
-                print(filename)
-    return models
+    if 'views' in parsed_lookML_file:
+        all_views = defaultdict(list)
+        for view in parsed_lookML_file['views']:
+            all_views[view['name']].append(view['name'])
+            if 'derived_table' in view:
+                if 'sql' in view['derived_table']:
+                    regex = r"([A-Za-z0-9_]+)\.SQL_TABLE_NAME"
+                    matches = re.findall(regex, view['derived_table']['sql'])
+                    [all_views[view['name']].append(match) for match in matches]
+            if 'extends' in view:
+                [all_views[view['name']].append(e) for e in view['extends']]
+        return all_views
 
 
-def all_views(path):
-    """Return a dictionary of Views and Dependent View Objects
-    Parameters:
-    path (str): Parent Directory to parse'
-    """
-    files = path_file_parser(path, extension='view.lkml')
-    views = {}
-    for file in files:
-        filename = file[file.rfind('/') + 1:]
-        views[filename] = {}
-        with open(file, 'r') as f:
-            try:
-                parsed = lkml.load(f)
-                try:
-                    for view in parsed['views']:
-                        views[filename][view['name']] = []
-                        if 'derived_table' in view:
-                            if 'sql' in view['derived_table']:
-                                regex = "([A-Za-z0-9_]+)\.SQL_TABLE_NAME"
-                                matches = re.findall(regex, view['derived_table']['sql'])
-                                [views[filename][view['name']].append(match) for match in matches]
-                        if 'extends' in view:
-                            [views[filename][view['name']].append(e) for e in view['extends']]
-                except KeyError:
-                    print(filename)
-            except SyntaxError:
-                print(filename)
-            except KeyError:
-                print(filename)
-    return views
-
-
-def set_unique_explores(model_dict):
+def set_unique_explores(all_explores_dict):
     """Return a set of unique explores
     Parameters:
     model_dict (dict): Explore Directory to parse'
     """
-    return set([v for explores in model_dict.values() for views in explores.values() for v in views])
+    return set([view for filename in all_explores_dict for base_view in all_explores_dict[filename] for view in all_explores_dict[filename][base_view]])
 
 
-def set_unique_views(view_dict):
+def set_unique_views(all_views_dict):
     """Return a set of unique views
     Parameters:
-    view_dict (dict): Views Directory to parse'
+    all_views_dict (dict): Views Directory to parse'
     """
-    set_view = set()
-    for views in view_dict.values():
-        for view_name, view_reference in views.items():
-            if len(view_reference) > 0:
-                set_view.update(set(view_reference))
-            set_view.add(view_name)
-    return set_view
-
-
-def identify_dependent_view(view_dict):
-    """Return a set of view dictionaries that have dependencies
-    Parameters:
-    view_dict (dict): Views Directory to parse'
-    """
-    return {k: v for view in view_dict.values() for k, v in view.items() if len(v) > 0}
+    return set([view for filename in all_views_dict for view_name in all_views_dict[filename] for view in all_views_dict[filename][view_name]])
 
 
 def dependent_view_check(view_dict, unique_explores_set):
-    for view in view_dict:
-        if view in unique_explores_set:
-            for reference in view_dict[view]:
-                if reference not in unique_explores_set:
-                    unique_explores_set.add(reference)
-                    if reference in view_dict:
-                        dependent_view_check(view_dict, unique_explores_set)
+    for view_name in view_dict.values():
+        for views in view_name.values():
+            if len(views) > 1 and views[0] in unique_explores_set:
+                for reference in views[1:]:
+                    if reference not in unique_explores_set:
+                        unique_explores_set.add(reference)
 
 
 def find_unused_views(set_views, set_explores):
@@ -147,32 +99,34 @@ def find_unused_views(set_views, set_explores):
     return sorted(unused_views)
 
 
-def find_empty_files(input_dict):
-    """ Return a set of view dictionaries that have dependencies
-    Parameters:
-    set_views (set): Unique Views
-    set_explores (set): Unique Exploers
-    """
-    return [file_name for file_name, name in input_dict.items() if len(name) == 0]
-
-
 if __name__ == "__main__":
+    # Initialize Argument Parser
     parser = argparse.ArgumentParser(description='Find all view files that are not referenced in content in a project.')
     parser.add_argument('--path', '-p', type=str, required=True, help='A path to be parsed')
     args = parser.parse_args()
-    # path = '/Users/johndemartino/Downloads/looker-apalon-lookml-master'
-    # main_path = args.path[args.path.rfind('/') + 1:]
-    main_path = os.path.basename(args.path.split('/')[-2])
-    models = all_explores(args.path)
-    views = all_views(args.path)
-    views_with_dependent = identify_dependent_view(views)
-
-    unique_explores = set_unique_explores(models)
-    unique_views = set_unique_views(views)
-    dependent_view_check(views_with_dependent, unique_explores)
+    # Find the last directory within path agrument
+    last_dir = os.path.basename(args.path.split('/')[-2])
+    files = path_file_parser(args.path, extension='*.lkml')
+    all_explores = {}
+    all_views = {}
+    unparsable_lookML_file = []
+    for file in files:
+        lookML_filename = file[file.rfind('/') + 1:]
+        with open(file, 'r') as f:
+            try:
+                parsed_lookML_file = lkml.load(f)
+                explore = identify_all_explores(parsed_lookML_file)
+                if explore is not None:
+                    all_explores[lookML_filename] = explore
+                view = identify_all_views(parsed_lookML_file)
+                if view is not None:
+                    all_views[lookML_filename] = view
+            except SyntaxError:
+                unparsable_lookML_file.append(lookML_filename)
+    unique_explores = set_unique_explores(all_explores)
+    dependent_view_check(all_views, unique_explores)
+    unique_views = set_unique_views(all_views)
     unused_views = find_unused_views(unique_views, unique_explores)
-    empty_model_files = find_empty_files(models)
-    empty_view_files = find_empty_files(views)
     output = pd.Series(unused_views)
-    output = output.append(pd.Series(empty_view_files))
-    output.reset_index(drop=True).to_csv(main_path + '_unused_views_2.csv', )
+    output = output.append(pd.Series(unparsable_lookML_file))
+    output.reset_index(drop=True).to_csv(last_dir + '_unused_views.csv', )
