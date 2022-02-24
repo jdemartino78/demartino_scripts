@@ -69,7 +69,13 @@ def set_unique_explores(all_explores_dict):
     Parameters:
     model_dict (dict): Explore Directory to parse'
     """
-    return set([view for filename in all_explores_dict for base_view in all_explores_dict[filename] for view in all_explores_dict[filename][base_view]])
+    set_explores = set()
+    for filename in all_explores_dict:
+        for base_view in all_explores_dict[filename]:
+            for view in all_explores_dict[filename][base_view]:
+                set_explores.add(view)
+    
+    return set_explores   
 
 
 def set_unique_views(all_views_dict):
@@ -101,7 +107,7 @@ def find_unused_views(set_views, set_explores):
 
 if __name__ == "__main__":
     # Initialize Argument Parser
-    parser = argparse.ArgumentParser(description='Find all view files that are not referenced in content in a project.')
+    parser = argparse.ArgumentParser(description='Find all view objects that are not referenced in explores or other view objects within a project.')
     parser.add_argument('--path', '-p', type=str, required=True, help='A path to be parsed')
     args = parser.parse_args()
     # Find the last directory within path agrument
@@ -117,12 +123,12 @@ if __name__ == "__main__":
                 parsed_lookML_file = lkml.load(f)
                 explore = identify_all_explores(parsed_lookML_file)
                 if explore is not None:
-                    all_explores[lookML_filename] = explore
+                    all_explores[file] = explore
                 view = identify_all_views(parsed_lookML_file)
                 if view is not None:
-                    all_views[lookML_filename] = view
+                    all_views[file] = view
             except SyntaxError:
-                unparsable_lookML_file.append(lookML_filename)
+                unparsable_lookML_file.append(file)
     unique_explores = set_unique_explores(all_explores)
     dependent_view_check(all_views, unique_explores)
     unique_views = set_unique_views(all_views)
