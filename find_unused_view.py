@@ -73,7 +73,11 @@ def set_unique_explores(all_explores_dict):
     for filename in all_explores_dict:
         for base_view in all_explores_dict[filename]:
             for view in all_explores_dict[filename][base_view]:
-                set_explores.add(view)
+                try:
+                    set_explores.add(view)
+                except TypeError:
+                    print('The %s explore found in the %s file has synatx issues' % (base_view, filename))
+
     
     return set_explores   
 
@@ -133,6 +137,8 @@ if __name__ == "__main__":
     dependent_view_check(all_views, unique_explores)
     unique_views = set_unique_views(all_views)
     unused_views = find_unused_views(unique_views, unique_explores)
-    output = pd.Series(unused_views)
+    output = pd.Series(unused_views, name="view_name")
+    output = output[~output.str.startswith('+')]
+    
     output = output.append(pd.Series(unparsable_lookML_file))
-    output.reset_index(drop=True).to_csv(last_dir + '_unused_views.csv', )
+    output.reset_index(drop=True).to_csv(last_dir + '_unused_views.csv',index=False)
