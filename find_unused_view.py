@@ -76,7 +76,7 @@ def set_unique_explores(all_explores_dict):
                 try:
                     set_explores.add(view)
                 except TypeError:
-                    print('The %s explore found in the %s file has synatx issues' % (base_view, filename))
+                    print('The %s explore found in the %s file has syntax issues' % (base_view, filename))
 
     
     return set_explores   
